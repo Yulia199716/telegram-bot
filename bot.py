@@ -4,19 +4,14 @@ from datetime import datetime, time
 import pytz
 from ics import Calendar
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
     ContextTypes,
-    CallbackQueryHandler,
-    MessageHandler,
-    filters,
 )
 
 TOKEN = os.getenv("TOKEN")
-
-ADMIN_IDS = {444694124, 7850041157}  # твои админы
 
 EVENT_CAL_URL = "https://calendar.google.com/calendar/ical/59cbd500efaa00ff43f350199960a488bd4923ea3ecc3014274714c509e379f8%40group.calendar.google.com/public/basic.ics"
 BIRTHDAY_CAL_URL = "https://calendar.google.com/calendar/ical/93effe2024ad7a4c10958ba8b9a712c26ee644057b258ffc72fd2332acd24c0f%40group.calendar.google.com/public/basic.ics"
@@ -24,9 +19,6 @@ BIRTHDAY_CAL_URL = "https://calendar.google.com/calendar/ical/93effe2024ad7a4c10
 TZ = pytz.timezone("Europe/Moscow")
 
 users = set()
-waiting_time_input = False
-current_send_time = time(10, 0)
-job = None
 
 
 def get_today_events(url):
@@ -68,86 +60,30 @@ async def morning_digest(context: ContextTypes.DEFAULT_TYPE):
             pass
 
 
-def schedule_job(app):
-    global job
-    if job:
-        job.schedule_removal()
-
-    job = app.job_queue.run_daily(
-        morning_digest,
-        time=current_send_time,
-        days=(0, 1, 2, 3, 4),  # пн–пт
-        tzinfo=TZ
-    )
-
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    users.add(user_id)
-
-    keyboard = []
-
-    if user_id in ADMIN_IDS:
-        keyboard.append([InlineKeyboardButton("⚙ Админ-панель", callback_data="admin_panel")])
-
-    await update.message.reply_text(
-        "Добрый день!",
-        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None
-    )
+    users.add(update.effective_user.id)
+    await update.message.reply_text("Ты подписан(а) на утреннюю рассылку ☀")
 
 
-async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+def main():
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    if query.from_user.id not in ADMIN_IDS:
-        return
+    app.add_handler(CommandHandler("start", start))
 
-    keyboard = [
-        [InlineKeyboardButton("⏰ Изменить время рассылки", callback_data="set_time")]
-    ]
+    # ⚠️ ВАЖНО: время с tzinfo
+    send_time = time(10, 0, tzinfo=TZ)
 
-    await query.message.reply_text("Админ-панель:", reply_markup=InlineKeyboardMarkup(keyboard))
+    if app.job_queue:
+        app.job_queue.run_daily(
+            morning_digest,
+            time=send_time,
+            days=(0, 1, 2, 3, 4)  # пн-пт
+        )
+    else:
+        print("❌ JobQueue не инициализирован")
 
-
-async def set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global waiting_time_input
-    query = update.callback_query
-    await query.answer()
-
-    if query.from_user.id not in ADMIN_IDS:
-        return
-
-    waiting_time_input = True
-    await query.message.reply_text("Введи время в формате HH:MM (например 09:30)")
+    app.run_polling()
 
 
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global waiting_time_input, current_send_time
-
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-
-    if not waiting_time_input:
-        return
-
-    try:
-        new_time = datetime.strptime(update.message.text, "%H:%M").time()
-        current_send_time = new_time
-        schedule_job(context.application)
-        waiting_time_input = False
-        await update.message.reply_text(f"✅ Время рассылки изменено на {new_time.strftime('%H:%M')}")
-    except:
-        await update.message.reply_text("❌ Неверный формат. Пример: 10:30")
-
-
-app = ApplicationBuilder().token(TOKEN).build()
-
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CallbackQueryHandler(admin_panel, pattern="admin_panel"))
-app.add_handler(CallbackQueryHandler(set_time, pattern="set_time"))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-
-schedule_job(app)
-
-app.run_polling()
+if __name__ == "__main__":
+    main()
