@@ -17,9 +17,6 @@ from telegram.ext import (
 TOKEN = os.getenv("TOKEN")
 
 ADMIN_IDS = {444694124, 7850041157}
-USER_SHABELNIK = 63158924
-USER_ADMIN_WITH_TWO = 7850041157
-
 REQUEST_CHAT_ID = -1003772017080
 
 EVENT_CAL_URL = "https://calendar.google.com/calendar/ical/59cbd500efaa00ff43f350199960a488bd4923ea3ecc3014274714c509e379f8%40group.calendar.google.com/public/basic.ics"
@@ -29,7 +26,6 @@ TZ = pytz.timezone("Europe/Moscow")
 
 users = {}
 current_send_time = time(10, 0, tzinfo=TZ)
-job = None
 
 pending_requests = {}
 
@@ -118,10 +114,7 @@ def schedule_job(app):
 
 # ---------- ГЛАВНОЕ МЕНЮ ----------
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    users[user.id] = user.full_name
-
+def main_menu_keyboard(user_id):
     keyboard = [
         [InlineKeyboardButton("📅 Календарь", url="https://clck.ru/3MscXu")],
         [InlineKeyboardButton("➕ Добавить мероприятие", url="https://clck.ru/3MrvFT")],
@@ -130,12 +123,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📞 Телефонный справочник", url="https://sks-bot.ru/employee")],
     ]
 
-    if user.id in ADMIN_IDS:
+    if user_id in ADMIN_IDS:
         keyboard.append([InlineKeyboardButton("⚙ Админ-панель", callback_data="admin_panel")])
+
+    return InlineKeyboardMarkup(keyboard)
+
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    users[user.id] = user.full_name
 
     await update.message.reply_text(
         "Выберите действие:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
+        reply_markup=main_menu_keyboard(user.id),
     )
 
 
@@ -153,7 +153,10 @@ async def requests_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⬅ Назад", callback_data="back_main")],
     ]
 
-    await query.message.reply_text("Тип заявки:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.edit_message_text(
+        "Тип заявки:",
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
 
 
 async def start_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -163,12 +166,12 @@ async def start_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     rtype = query.data.replace("req_", "")
     fields = REQUEST_FORMS[rtype]
 
-    text = "Заполните заявку одним сообщением (в свободной форме):\n\n"
+    text = "Заполните заявку одним сообщением:\n\n"
     for i, f in enumerate(fields, 1):
         text += f"{i}. {f}\n"
 
     pending_requests[query.from_user.id] = rtype
-    await query.message.reply_text(text)
+    await query.message.edit_message_text(text)
 
 
 # ---------- ПРИЁМ ЗАЯВОК ----------
@@ -216,8 +219,26 @@ async def decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def back_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.callback_query.answer()
-    await start(update, context)
+    query = update.callback_query
+    await query.answer()
+
+    await query.message.edit_message_text(
+        "Выберите действие:",
+        reply_markup=main_menu_keyboard(query.from_user.id),
+    )
+
+
+# ---------- АДМИН ПАНЕЛЬ ----------
+
+async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    keyboard = [
+        [InlineKeyboardButton("⬅ Назад", callback_data="back_main")]
+    ]
+
+    await query.message.edit_message_text("Админ-панель", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 def main():
@@ -228,6 +249,7 @@ def main():
     app.add_handler(CallbackQueryHandler(start_request, pattern="^req_"))
     app.add_handler(CallbackQueryHandler(decision, pattern="^(ok_|no_)"))
     app.add_handler(CallbackQueryHandler(back_main, pattern="^back_main$"))
+    app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     schedule_job(app)
