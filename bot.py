@@ -145,7 +145,7 @@ async def requests_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⬅ Назад", callback_data="back_main")],
     ]
 
-    await query.message.edit_message_text("Тип заявки:", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.edit_text("Тип заявки:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def start_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -160,7 +160,7 @@ async def start_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"{i}. {f}\n"
 
     pending_requests[query.from_user.id] = rtype
-    await query.message.edit_message_text(text)
+    await query.message.edit_text(text)
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -208,13 +208,13 @@ async def decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def back_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.edit_message_text("Выберите действие:", reply_markup=main_menu_keyboard(query.from_user.id))
+    await query.message.edit_text("Выберите действие:", reply_markup=main_menu_keyboard(query.from_user.id))
 
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.edit_message_text(
+    await query.message.edit_text(
         "Админ-панель",
         reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Назад", callback_data="back_main")]])
     )
