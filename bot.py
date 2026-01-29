@@ -120,7 +120,7 @@ def main_menu_keyboard(user_id):
         [InlineKeyboardButton("➕ Добавить мероприятие", url="https://clck.ru/3MrvFT")],
         [InlineKeyboardButton("📨 Заявки", callback_data="requests_menu")],
         [InlineKeyboardButton("📎 План работы", url="https://clck.ru/3RWwS3")],
-        [InlineKeyboardButton("📞 Телефонный справочник", url="https://sks-bot.ru/employee")],
+        [InlineKeyboardButton("📞 Телефонный справочник", url="https://www.sks-bot.ru/prof_employee/employee")],
     ]
     if user_id in ADMIN_IDS:
         keyboard.append([InlineKeyboardButton("⚙ Админ-панель", callback_data="admin_panel")])
