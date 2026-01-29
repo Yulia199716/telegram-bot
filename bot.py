@@ -41,8 +41,10 @@ def get_today_events(url):
         result = []
 
         for event in cal.events:
-            if event.begin.astimezone(TZ).date() == today:
-                result.append(event.name)
+            event_dt = event.begin.astimezone(TZ)
+            if event_dt.date() == today:
+                event_time = event_dt.strftime("%H:%M")
+                result.append(f"{event_time} — {event.name}")
 
         return result
     except:
@@ -57,7 +59,7 @@ async def morning_digest(context: ContextTypes.DEFAULT_TYPE):
     birthday_text = "\n".join(f"- {b}" for b in birthdays) if birthdays else "нет"
 
     text = (
-        "☀Доброе утро!\n"
+        "☀ Доброе утро!\n"
         "Сегодня в календаре:\n"
         f"{events_text}\n\n"
         "Сегодня день рождения:\n"
@@ -79,7 +81,7 @@ def schedule_job(app):
     job = app.job_queue.run_daily(
         morning_digest,
         time=current_send_time,
-        days=(0, 1, 2, 3, 4)
+        days=(0, 1, 2, 3, 4),
     )
 
 
@@ -92,7 +94,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("➕ Добавить мероприятие", url="https://clck.ru/3MrvFT")],
         [InlineKeyboardButton("📝 Заявка на вход", url="https://forms.yandex.ru/cloud/697743ab068ff06061e8a02e")],
         [InlineKeyboardButton("📝 Заявка", url="https://forms.yandex.ru/cloud/65cc7cb92530c22a292928c9/?page=1")],
-        [InlineKeyboardButton("📞 Телефонный справочник", url="https://sks-bot.ru/employee")]
+        [InlineKeyboardButton("📞 Телефонный справочник", url="https://sks-bot.ru/employee")],
+        [InlineKeyboardButton("📎 План работы", url="https://clck.ru/3RWwS3")],
     ]
 
     if user_id == USER_SHABELNIK:
@@ -107,7 +110,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "Добрый день! Выберите действие:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
+        reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
 
@@ -121,7 +124,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📢 Сделать рассылку", callback_data="broadcast")],
         [InlineKeyboardButton("📊 Статистика", callback_data="stats")],
-        [InlineKeyboardButton("⏰ Изменить время рассылки", callback_data="set_time")]
+        [InlineKeyboardButton("⏰ Изменить время рассылки", callback_data="set_time")],
     ]
 
     await query.message.reply_text("Админ-панель:", reply_markup=InlineKeyboardMarkup(keyboard))
