@@ -111,7 +111,7 @@ async def morning_digest(context):
 
 
 def schedule_job(app):
-    app.job_queue.run_daily(morning_digest, time=current_send_time, days=(0,1,2,3,4))
+    app.job_queue.run_daily(morning_digest, time=current_send_time, days=(0, 1, 2, 3, 4))
 
 
 def main_menu_keyboard(user_id):
@@ -214,9 +214,10 @@ async def back_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.edit_message_text("Админ-панель", reply_markup=InlineKeyboardMarkup(
-        [[InlineKeyboardButton("⬅ Назад", callback_data="back_main")]]
-    ))
+    await query.message.edit_message_text(
+        "Админ-панель",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Назад", callback_data="back_main")]])
+    )
 
 
 def main():
@@ -224,12 +225,11 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(requests_menu, pattern="^requests_menu$"))
-    app.add_handler(CallbackQueryHandler(start_request, pattern="^req_"))
+    app.add_handler(CallbackQueryHandler(start_request, pattern="^req_(vks|pass|carry|buy)$"))
     app.add_handler(CallbackQueryHandler(decision, pattern="^(ok_|no_)"))
     app.add_handler(CallbackQueryHandler(back_main, pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
 
-    # ВАЖНО: MessageHandler ПОСЛЕДНИМ
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     schedule_job(app)
