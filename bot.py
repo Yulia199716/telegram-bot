@@ -21,7 +21,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_counter += 1
 
     keyboard = [
-        [InlineKeyboardButton("Календарь", url="https://clck.ru/3MscXu")],
+        [InlineKeyboardButton("Календарь", url="https://clck.ru/3PytwM")],
         [InlineKeyboardButton("Добавить мероприятие", url="https://clck.ru/3MrvFT")],
         [InlineKeyboardButton("Заявка на вход", url="https://forms.yandex.ru/cloud/697743ab068ff06061e8a02e")],
         [InlineKeyboardButton("Заявка", url="https://forms.yandex.ru/cloud/65cc7cb92530c22a292928c9/?page=1")],
