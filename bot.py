@@ -10,11 +10,13 @@ from telegram.ext import (
     CommandHandler,
     ContextTypes,
     CallbackQueryHandler,
+    MessageHandler,
+    filters,
 )
 
 TOKEN = os.getenv("TOKEN")
 
-# роли пользователей
+# роли
 ADMIN_IDS = {444694124, 7850041157}
 USER_SHABELNIK = 63158924
 USER_ADMIN_WITH_TWO = 7850041157
@@ -25,6 +27,10 @@ BIRTHDAY_CAL_URL = "https://calendar.google.com/calendar/ical/93effe2024ad7a4c10
 TZ = pytz.timezone("Europe/Moscow")
 
 users = set()
+waiting_broadcast = False
+waiting_time = False
+current_send_time = time(10, 0, tzinfo=TZ)
+job = None
 
 
 def get_today_events(url):
@@ -39,8 +45,7 @@ def get_today_events(url):
                 result.append(event.name)
 
         return result
-    except Exception as e:
-        print("Ошибка календаря:", e)
+    except:
         return []
 
 
@@ -66,6 +71,18 @@ async def morning_digest(context: ContextTypes.DEFAULT_TYPE):
             pass
 
 
+def schedule_job(app):
+    global job
+    if job:
+        job.schedule_removal()
+
+    job = app.job_queue.run_daily(
+        morning_digest,
+        time=current_send_time,
+        days=(0, 1, 2, 3, 4)
+    )
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     users.add(user_id)
@@ -78,26 +95,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📞 Телефонный справочник", url="https://sks-bot.ru/employee")]
     ]
 
-    # Шабельник
     if user_id == USER_SHABELNIK:
-        keyboard.append([
-            InlineKeyboardButton("Мероприятия Шабельник В.В.", url="https://clck.ru/3Ms2mH")
-        ])
+        keyboard.append([InlineKeyboardButton("Мероприятия Шабельник В.В.", url="https://clck.ru/3Ms2mH")])
 
-    # админ с двумя кнопками
     if user_id == USER_ADMIN_WITH_TWO:
-        keyboard.append([
-            InlineKeyboardButton("Мероприятия Шабельник В.В.", url="https://clck.ru/3Ms2mH")
-        ])
-        keyboard.append([
-            InlineKeyboardButton("Мероприятия Солодилова Л.А.", url="https://clck.ru/3Ms33K")
-        ])
+        keyboard.append([InlineKeyboardButton("Мероприятия Шабельник В.В.", url="https://clck.ru/3Ms2mH")])
+        keyboard.append([InlineKeyboardButton("Мероприятия Солодилова Л.А.", url="https://clck.ru/3Ms33K")])
 
-    # админка
     if user_id in ADMIN_IDS:
-        keyboard.append([
-            InlineKeyboardButton("⚙ Админ-панель", callback_data="admin_panel")
-        ])
+        keyboard.append([InlineKeyboardButton("⚙ Админ-панель", callback_data="admin_panel")])
 
     await update.message.reply_text(
         "Добрый день! Выберите действие:",
@@ -112,7 +118,76 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.from_user.id not in ADMIN_IDS:
         return
 
-    await query.message.reply_text("Админ-панель (пока без функций)")
+    keyboard = [
+        [InlineKeyboardButton("📢 Сделать рассылку", callback_data="broadcast")],
+        [InlineKeyboardButton("📊 Статистика", callback_data="stats")],
+        [InlineKeyboardButton("⏰ Изменить время рассылки", callback_data="set_time")]
+    ]
+
+    await query.message.reply_text("Админ-панель:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def handle_broadcast_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global waiting_broadcast
+    query = update.callback_query
+    await query.answer()
+
+    waiting_broadcast = True
+    await query.message.reply_text("Напиши текст рассылки одним сообщением.")
+
+
+async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    text = "📊 Пользователи:\n"
+    for uid in users:
+        text += f"- {uid}\n"
+
+    text += f"\nВсего: {len(users)}\nВремя рассылки: {current_send_time.strftime('%H:%M')}"
+    await query.message.reply_text(text)
+
+
+async def handle_set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global waiting_time
+    query = update.callback_query
+    await query.answer()
+
+    waiting_time = True
+    await query.message.reply_text("Введи время в формате HH:MM (например 09:30)")
+
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global waiting_broadcast, waiting_time, current_send_time
+
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+
+    if user_id not in ADMIN_IDS:
+        return
+
+    if waiting_time:
+        try:
+            new_time = datetime.strptime(text, "%H:%M").time()
+            current_send_time = time(new_time.hour, new_time.minute, tzinfo=TZ)
+            schedule_job(context.application)
+            waiting_time = False
+            await update.message.reply_text(f"✅ Время изменено на {text}")
+        except:
+            await update.message.reply_text("❌ Формат неверный. Пример: 10:30")
+        return
+
+    if waiting_broadcast:
+        sent = 0
+        for uid in users:
+            try:
+                await context.bot.send_message(chat_id=uid, text=text)
+                sent += 1
+            except:
+                pass
+
+        waiting_broadcast = False
+        await update.message.reply_text(f"✅ Отправлено {sent} пользователям.")
 
 
 def main():
@@ -120,17 +195,12 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="admin_panel"))
+    app.add_handler(CallbackQueryHandler(handle_broadcast_button, pattern="broadcast"))
+    app.add_handler(CallbackQueryHandler(handle_stats, pattern="stats"))
+    app.add_handler(CallbackQueryHandler(handle_set_time, pattern="set_time"))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    send_time = time(10, 0, tzinfo=TZ)
-
-    if app.job_queue:
-        app.job_queue.run_daily(
-            morning_digest,
-            time=send_time,
-            days=(0, 1, 2, 3, 4)
-        )
-    else:
-        print("❌ JobQueue не инициализирован")
+    schedule_job(app)
 
     app.run_polling()
 
