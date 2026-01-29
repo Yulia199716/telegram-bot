@@ -81,13 +81,14 @@ def get_today_events(url):
         cal = Calendar(r.text)
         today = datetime.now(TZ).date()
         result = []
+
         for event in cal.events:
-            dt = event.begin.astimezone(TZ)
-            if dt.date() == today:
+            event_dt = event.begin.astimezone(TZ)
+            if event_dt.date() == today:
                 if event.begin.time() == time(0, 0):
                     result.append(event.name)
                 else:
-                    result.append(f"{dt.strftime('%H:%M')} — {event.name}")
+                    result.append(f"{event_dt.strftime('%H:%M')} — {event.name}")
         return result
     except:
         return []
@@ -106,10 +107,7 @@ async def morning_digest(context):
     )
 
     for uid in users:
-        try:
-            await context.bot.send_message(chat_id=uid, text=text)
-        except:
-            pass
+        await context.bot.send_message(chat_id=uid, text=text)
 
 
 def schedule_job(app):
@@ -167,14 +165,13 @@ async def start_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
-    text = update.message.text.strip()
-
     if user_id not in pending_requests:
         return
 
     rtype = pending_requests[user_id]
-    title = REQUEST_TITLES.get(rtype, "📨 Заявка")
-    msg = f"{title}\n\n{text}"
+    title = REQUEST_TITLES[rtype]
+
+    msg = f"{title}\n\n{update.message.text}"
 
     keyboard = InlineKeyboardMarkup([
         [
@@ -194,21 +191,16 @@ async def decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.message.chat.id != REQUEST_CHAT_ID:
-        return
-
     uid = int(query.data.split("_")[1])
 
     if query.data.startswith("ok_"):
         await context.bot.send_message(chat_id=uid, text="✅ Ваша заявка готова.")
-        await query.message.reply_text("Отмечено как выполнено.")
     else:
         await context.bot.send_message(chat_id=uid, text="❌ Ваша заявка отклонена.")
-        await query.message.reply_text("Заявка отклонена.")
 
-    await query.message.edit_reply_markup(reply_markup=None)
+    await query.message.edit_reply_markup(None)
     try:
-        await context.bot.unpin_chat_message(chat_id=REQUEST_CHAT_ID, message_id=query.message.message_id)
+        await context.bot.unpin_chat_message(REQUEST_CHAT_ID, query.message.message_id)
     except:
         pass
 
@@ -222,8 +214,9 @@ async def back_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    keyboard = [[InlineKeyboardButton("⬅ Назад", callback_data="back_main")]]
-    await query.message.edit_message_text("Админ-панель", reply_markup=InlineKeyboardMarkup(keyboard))
+    await query.message.edit_message_text("Админ-панель", reply_markup=InlineKeyboardMarkup(
+        [[InlineKeyboardButton("⬅ Назад", callback_data="back_main")]]
+    ))
 
 
 def main():
@@ -231,10 +224,12 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(requests_menu, pattern="^requests_menu$"))
-    app.add_handler(CallbackQueryHandler(start_request, pattern="^req_(vks|pass|carry|buy)$"))
+    app.add_handler(CallbackQueryHandler(start_request, pattern="^req_"))
     app.add_handler(CallbackQueryHandler(decision, pattern="^(ok_|no_)"))
     app.add_handler(CallbackQueryHandler(back_main, pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
+
+    # ВАЖНО: MessageHandler ПОСЛЕДНИМ
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     schedule_job(app)
