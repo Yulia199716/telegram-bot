@@ -7,7 +7,8 @@ from telegram.ext import (
 
 TOKEN = os.getenv("TOKEN")
 
-ADMIN_ID = 444694124  # твой ID администратора
+ADMIN_IDS = {444694124, 7850041157}  # администраторы
+SPECIAL_USER_ID = 7850041157         # пользователь с кнопкой "МОИ МЕРОПРИЯТИЯ"
 
 users = set()
 start_counter = 0
@@ -21,15 +22,24 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     start_counter += 1
 
     keyboard = [
-        [InlineKeyboardButton("Календарь", url="https://clck.ru/3PytwM")],
+        [InlineKeyboardButton("Календарь", url="https://clck.ru/3MscXu")],
         [InlineKeyboardButton("Добавить мероприятие", url="https://clck.ru/3MrvFT")],
         [InlineKeyboardButton("Заявка на вход", url="https://forms.yandex.ru/cloud/697743ab068ff06061e8a02e")],
         [InlineKeyboardButton("Заявка", url="https://forms.yandex.ru/cloud/65cc7cb92530c22a292928c9/?page=1")],
         [InlineKeyboardButton("Телефонный справочник", url="https://sks-bot.ru/employee")]
     ]
 
-    if user_id == ADMIN_ID:
-        keyboard.append([InlineKeyboardButton("⚙ Админ-панель", callback_data="admin_panel")])
+    # кнопка только для пользователя 7850041157
+    if user_id == SPECIAL_USER_ID:
+        keyboard.append(
+            [InlineKeyboardButton("МОИ МЕРОПРИЯТИЯ", url="https://clck.ru/3Ms33K")]
+        )
+
+    # кнопка админа
+    if user_id in ADMIN_IDS:
+        keyboard.append(
+            [InlineKeyboardButton("⚙ Админ-панель", callback_data="admin_panel")]
+        )
 
     await update.message.reply_text(
         "Добрый день! Вы как всегда прекрасны :)",
@@ -41,7 +51,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.from_user.id != ADMIN_ID:
+    if query.from_user.id not in ADMIN_IDS:
         return
 
     keyboard = [
@@ -59,7 +69,7 @@ async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.from_user.id != ADMIN_ID:
+    if query.from_user.id not in ADMIN_IDS:
         return
 
     text = (
@@ -76,7 +86,7 @@ async def handle_broadcast_button(update: Update, context: ContextTypes.DEFAULT_
     query = update.callback_query
     await query.answer()
 
-    if query.from_user.id != ADMIN_ID:
+    if query.from_user.id not in ADMIN_IDS:
         return
 
     waiting_broadcast_text = True
@@ -86,7 +96,7 @@ async def handle_broadcast_button(update: Update, context: ContextTypes.DEFAULT_
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global waiting_broadcast_text
 
-    if update.effective_user.id != ADMIN_ID:
+    if update.effective_user.id not in ADMIN_IDS:
         return
 
     if not waiting_broadcast_text:
