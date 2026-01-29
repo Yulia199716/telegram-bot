@@ -14,7 +14,7 @@ from telegram.ext import (
 
 TOKEN = os.getenv("TOKEN")
 
-# роли
+# роли пользователей
 ADMIN_IDS = {444694124, 7850041157}
 USER_SHABELNIK = 63158924
 USER_ADMIN_WITH_TWO = 7850041157
@@ -112,7 +112,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.from_user.id not in ADMIN_IDS:
         return
 
-    await query.message.reply_text("Админ-панель (пока пусто)")
+    await query.message.reply_text("Админ-панель (пока без функций)")
 
 
 def main():
