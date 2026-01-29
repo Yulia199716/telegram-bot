@@ -1,4 +1,9 @@
 import os
+import requests
+from datetime import datetime
+import pytz
+from ics import Calendar
+
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, ContextTypes,
@@ -7,12 +12,59 @@ from telegram.ext import (
 
 TOKEN = os.getenv("TOKEN")
 
-ADMIN_IDS = {444694124, 7850041157}  # администраторы
-SPECIAL_USER_ID = 7850041157         # пользователь с кнопкой "МОИ МЕРОПРИЯТИЯ"
+ADMIN_IDS = {444694124, 7850041157}
+SPECIAL_USER_ID = 7850041157
+
+BIRTHDAY_CAL_URL = "https://calendar.google.com/calendar/ical/93effe2024ad7a4c10958ba8b9a712c26ee644057b258ffc72fd2332acd24c0f%40group.calendar.google.com/public/basic.ics"
+EVENT_CAL_URL = "https://calendar.google.com/calendar/ical/59cbd500efaa00ff43f350199960a488bd4923ea3ecc3014274714c509e379f8%40group.calendar.google.com/public/basic.ics"
 
 users = set()
 start_counter = 0
 waiting_broadcast_text = False
+
+TZ = pytz.timezone("Europe/Moscow")
+
+
+def get_today_events(url):
+    r = requests.get(url)
+    cal = Calendar(r.text)
+    today = datetime.now(TZ).date()
+
+    result = []
+    for event in cal.events:
+        if event.begin.astimezone(TZ).date() == today:
+            result.append(event.name)
+
+    return result
+
+
+async def morning_digest(context: ContextTypes.DEFAULT_TYPE):
+    events = get_today_events(EVENT_CAL_URL)
+    birthdays = get_today_events(BIRTHDAY_CAL_URL)
+
+    if events:
+        events_text = "\n".join(f"- {e}" for e in events)
+    else:
+        events_text = "нет мероприятий"
+
+    if birthdays:
+        birthday_text = "\n".join(f"- {b}" for b in birthdays)
+    else:
+        birthday_text = "нет"
+
+    text = (
+        "☀Доброе утро!\n"
+        "Сегодня в календаре:\n"
+        f"{events_text}\n\n"
+        "Сегодня день рождения:\n"
+        f"{birthday_text}"
+    )
+
+    for user_id in users:
+        try:
+            await context.bot.send_message(chat_id=user_id, text=text)
+        except:
+            pass
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -29,17 +81,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Телефонный справочник", url="https://sks-bot.ru/employee")]
     ]
 
-    # кнопка только для пользователя 7850041157
     if user_id == SPECIAL_USER_ID:
-        keyboard.append(
-            [InlineKeyboardButton("МОИ МЕРОПРИЯТИЯ", url="https://clck.ru/3Ms33K")]
-        )
+        keyboard.append([InlineKeyboardButton("МОИ МЕРОПРИЯТИЯ", url="https://clck.ru/3Ms33K")])
 
-    # кнопка админа
     if user_id in ADMIN_IDS:
-        keyboard.append(
-            [InlineKeyboardButton("⚙ Админ-панель", callback_data="admin_panel")]
-        )
+        keyboard.append([InlineKeyboardButton("⚙ Админ-панель", callback_data="admin_panel")])
 
     await update.message.reply_text(
         "Добрый день! Вы как всегда прекрасны :)",
@@ -59,10 +105,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("📊 Статистика", callback_data="stats")]
     ]
 
-    await query.message.reply_text(
-        "Админ-панель:",
-        reply_markup=InlineKeyboardMarkup(keyboard)
-    )
+    await query.message.reply_text("Админ-панель:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -123,5 +166,12 @@ app.add_handler(CallbackQueryHandler(admin_panel, pattern="admin_panel"))
 app.add_handler(CallbackQueryHandler(handle_broadcast_button, pattern="broadcast"))
 app.add_handler(CallbackQueryHandler(handle_stats, pattern="stats"))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+# ⏰ запуск по будням в 10:00
+app.job_queue.run_daily(
+    morning_digest,
+    time=datetime.strptime("10:00", "%H:%M").time(),
+    days=(0, 1, 2, 3, 4)
+)
 
 app.run_polling()
