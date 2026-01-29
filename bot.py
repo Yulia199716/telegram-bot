@@ -20,20 +20,21 @@ TOKEN = os.getenv("TOKEN")
 ADMIN_IDS = {444694124, 7850041157}
 USER_SHABELNIK = 63158924
 USER_ADMIN_WITH_TWO = 7850041157
-MANAGER_ID = 444694124
+
+REQUEST_CHAT_ID = -1003772017080  # ЧАТ ДЛЯ ЗАЯВОК ВКС
 
 EVENT_CAL_URL = "https://calendar.google.com/calendar/ical/59cbd500efaa00ff43f350199960a488bd4923ea3ecc3014274714c509e379f8%40group.calendar.google.com/public/basic.ics"
 BIRTHDAY_CAL_URL = "https://calendar.google.com/calendar/ical/93effe2024ad7a4c10958ba8b9a712c26ee644057b258ffc72fd2332acd24c0f%40group.calendar.google.com/public/basic.ics"
 
 TZ = pytz.timezone("Europe/Moscow")
 
-users = {}  # user_id -> name
+users = {}
 
 waiting_broadcast = False
 waiting_time = False
 
-probe_requests = {}
-waiting_probe_step = {}
+vks_requests = {}
+waiting_vks_step = {}
 
 current_send_time = time(10, 0, tzinfo=TZ)
 job = None
@@ -104,7 +105,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [InlineKeyboardButton("📅 Календарь", url="https://clck.ru/3MscXu")],
         [InlineKeyboardButton("➕ Добавить мероприятие", url="https://clck.ru/3MrvFT")],
-        [InlineKeyboardButton("🧾 ЗАЯВКА ПРОБА", callback_data="probe_request")],
+        [InlineKeyboardButton("🎥 Заявка на ВКС", callback_data="vks_request")],
         [InlineKeyboardButton("📝 Заявка на вход", url="https://forms.yandex.ru/cloud/697743ab068ff06061e8a02e")],
         [InlineKeyboardButton("📝 Заявка", url="https://forms.yandex.ru/cloud/65cc7cb92530c22a292928c9/?page=1")],
         [InlineKeyboardButton("📞 Телефонный справочник", url="https://sks-bot.ru/employee")],
@@ -127,40 +128,59 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-# ---------- ЗАЯВКА ПРОБА ----------
+# -------- ЗАЯВКА ВКС --------
 
-async def start_probe_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
+VKS_FIELDS = [
+    "Дата мероприятия",
+    "Время начала",
+    "Продолжительность",
+    "Название мероприятия",
+    "Платформа (Толк / Сферум)",
+    "Место проведения",
+    "Количество ведущих",
+    "Количество участников",
+    "Нужна ли трансляция (да/нет)",
+    "Нужен ли показ презентации (да/нет)",
+    "Нужен ли показ видео (да/нет)",
+    "Нужно ли голосование (да/нет)",
+    "Название департамента",
+    "Email ответственного",
+    "Телефон ответственного",
+]
+
+
+async def start_vks_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     user_id = query.from_user.id
-    waiting_probe_step[user_id] = 1
-    probe_requests[user_id] = {}
+    waiting_vks_step[user_id] = 0
+    vks_requests[user_id] = {}
 
-    await query.message.reply_text("Введите ФИО:")
+    await query.message.reply_text(f"Введите: {VKS_FIELDS[0]}")
 
 
-async def handle_probe_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
+async def handle_vks_decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
-    if query.from_user.id != MANAGER_ID:
+    if query.message.chat.id != REQUEST_CHAT_ID:
         return
 
     data = query.data
 
-    if data.startswith("probe_accept_"):
-        user_id = int(data.replace("probe_accept_", ""))
-        await context.bot.send_message(chat_id=user_id, text="✅ Ваша заявка ПРИНЯТА. С вами свяжется менеджер.")
+    if data.startswith("vks_accept_"):
+        user_id = int(data.replace("vks_accept_", ""))
+        await context.bot.send_message(chat_id=user_id, text="✅ Ваша заявка ВКС ПРИНЯТА.")
         await query.message.reply_text("Заявка принята.")
 
-    elif data.startswith("probe_reject_"):
-        user_id = int(data.replace("probe_reject_", ""))
-        await context.bot.send_message(chat_id=user_id, text="❌ Ваша заявка ОТКЛОНЕНА.")
+    elif data.startswith("vks_reject_"):
+        user_id = int(data.replace("vks_reject_", ""))
+        await context.bot.send_message(chat_id=user_id, text="❌ Ваша заявка ВКС ОТКЛОНЕНА.")
         await query.message.reply_text("Заявка отклонена.")
 
 
-# ---------- АДМИНКА ----------
+# -------- АДМИНКА --------
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -212,55 +232,38 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
 
-    # ----- ЗАЯВКА ПРОБА -----
-    if user_id in waiting_probe_step:
-        step = waiting_probe_step[user_id]
+    # ---- заявка ВКС ----
+    if user_id in waiting_vks_step:
+        step = waiting_vks_step[user_id]
+        field = VKS_FIELDS[step]
+        vks_requests[user_id][field] = text
+        step += 1
 
-        if step == 1:
-            probe_requests[user_id]["fio"] = text
-            waiting_probe_step[user_id] = 2
-            await update.message.reply_text("Введите организацию:")
+        if step < len(VKS_FIELDS):
+            waiting_vks_step[user_id] = step
+            await update.message.reply_text(f"Введите: {VKS_FIELDS[step]}")
             return
-
-        if step == 2:
-            probe_requests[user_id]["org"] = text
-            waiting_probe_step[user_id] = 3
-            await update.message.reply_text("Введите телефон:")
-            return
-
-        if step == 3:
-            probe_requests[user_id]["phone"] = text
-            waiting_probe_step[user_id] = 4
-            await update.message.reply_text("Введите email:")
-            return
-
-        if step == 4:
-            probe_requests[user_id]["email"] = text
-            data = probe_requests[user_id]
-
-            msg = (
-                "🧾 Новая заявка ПРОБА:\n\n"
-                f"ФИО: {data['fio']}\n"
-                f"Организация: {data['org']}\n"
-                f"Телефон: {data['phone']}\n"
-                f"Email: {data['email']}"
-            )
+        else:
+            data = vks_requests[user_id]
+            msg = "🎥 Новая заявка ВКС:\n\n"
+            for k, v in data.items():
+                msg += f"{k}: {v}\n"
 
             keyboard = InlineKeyboardMarkup([
                 [
-                    InlineKeyboardButton("✅ Принять", callback_data=f"probe_accept_{user_id}"),
-                    InlineKeyboardButton("❌ Отклонить", callback_data=f"probe_reject_{user_id}")
+                    InlineKeyboardButton("✅ Принять", callback_data=f"vks_accept_{user_id}"),
+                    InlineKeyboardButton("❌ Отклонить", callback_data=f"vks_reject_{user_id}")
                 ]
             ])
 
-            await context.bot.send_message(chat_id=MANAGER_ID, text=msg, reply_markup=keyboard)
-            await update.message.reply_text("✅ Ваша заявка отправлена менеджеру.")
+            await context.bot.send_message(chat_id=REQUEST_CHAT_ID, text=msg, reply_markup=keyboard)
+            await update.message.reply_text("✅ Ваша заявка отправлена.")
 
-            del waiting_probe_step[user_id]
-            del probe_requests[user_id]
+            del waiting_vks_step[user_id]
+            del vks_requests[user_id]
             return
 
-    # ----- АДМИНКА -----
+    # ---- админка ----
     if user_id not in ADMIN_IDS:
         return
 
@@ -292,9 +295,9 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(start_probe_request, pattern="^probe_request$"))
-    app.add_handler(CallbackQueryHandler(handle_probe_decision, pattern="^probe_accept_"))
-    app.add_handler(CallbackQueryHandler(handle_probe_decision, pattern="^probe_reject_"))
+    app.add_handler(CallbackQueryHandler(start_vks_request, pattern="^vks_request$"))
+    app.add_handler(CallbackQueryHandler(handle_vks_decision, pattern="^vks_accept_"))
+    app.add_handler(CallbackQueryHandler(handle_vks_decision, pattern="^vks_reject_"))
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
     app.add_handler(CallbackQueryHandler(handle_broadcast_button, pattern="^broadcast$"))
     app.add_handler(CallbackQueryHandler(handle_stats, pattern="^stats$"))
