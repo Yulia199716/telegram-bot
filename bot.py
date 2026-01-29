@@ -1,6 +1,6 @@
 import os
 import requests
-from datetime import datetime
+from datetime import datetime, time
 import pytz
 from ics import Calendar
 
@@ -21,16 +21,19 @@ EVENT_CAL_URL = "https://calendar.google.com/calendar/ical/59cbd500efaa00ff43f35
 users = set()
 start_counter = 0
 waiting_broadcast_text = False
+waiting_time_input = False
 
 TZ = pytz.timezone("Europe/Moscow")
+current_send_time = time(10, 0)  # по умолчанию 10:00
+job = None
 
 
 def get_today_events(url):
     r = requests.get(url)
     cal = Calendar(r.text)
     today = datetime.now(TZ).date()
-
     result = []
+
     for event in cal.events:
         if event.begin.astimezone(TZ).date() == today:
             result.append(event.name)
@@ -42,15 +45,8 @@ async def morning_digest(context: ContextTypes.DEFAULT_TYPE):
     events = get_today_events(EVENT_CAL_URL)
     birthdays = get_today_events(BIRTHDAY_CAL_URL)
 
-    if events:
-        events_text = "\n".join(f"- {e}" for e in events)
-    else:
-        events_text = "нет мероприятий"
-
-    if birthdays:
-        birthday_text = "\n".join(f"- {b}" for b in birthdays)
-    else:
-        birthday_text = "нет"
+    events_text = "\n".join(f"- {e}" for e in events) if events else "нет мероприятий"
+    birthday_text = "\n".join(f"- {b}" for b in birthdays) if birthdays else "нет"
 
     text = (
         "☀Доброе утро!\n"
@@ -65,6 +61,18 @@ async def morning_digest(context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(chat_id=user_id, text=text)
         except:
             pass
+
+
+def schedule_job(app):
+    global job
+    if job:
+        job.schedule_removal()
+
+    job = app.job_queue.run_daily(
+        morning_digest,
+        time=current_send_time,
+        days=(0, 1, 2, 3, 4)
+    )
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -102,10 +110,58 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     keyboard = [
         [InlineKeyboardButton("📢 Сделать рассылку", callback_data="broadcast")],
-        [InlineKeyboardButton("📊 Статистика", callback_data="stats")]
+        [InlineKeyboardButton("📊 Статистика", callback_data="stats")],
+        [InlineKeyboardButton("⏰ Время рассылки", callback_data="set_time")]
     ]
 
     await query.message.reply_text("Админ-панель:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def handle_set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global waiting_time_input
+    query = update.callback_query
+    await query.answer()
+
+    if query.from_user.id not in ADMIN_IDS:
+        return
+
+    waiting_time_input = True
+    await query.message.reply_text("Введи новое время рассылки в формате HH:MM (например 09:30)")
+
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global waiting_broadcast_text, waiting_time_input, current_send_time
+
+    user_id = update.effective_user.id
+    text = update.message.text.strip()
+
+    if user_id not in ADMIN_IDS:
+        return
+
+    if waiting_time_input:
+        try:
+            new_time = datetime.strptime(text, "%H:%M").time()
+            current_send_time = new_time
+            schedule_job(context.application)
+            waiting_time_input = False
+            await update.message.reply_text(f"✅ Время рассылки изменено на {text}")
+        except:
+            await update.message.reply_text("❌ Неверный формат. Введи так: 10:30")
+        return
+
+    if not waiting_broadcast_text:
+        return
+
+    sent = 0
+    for uid in users:
+        try:
+            await context.bot.send_message(chat_id=uid, text=text)
+            sent += 1
+        except:
+            pass
+
+    waiting_broadcast_text = False
+    await update.message.reply_text(f"✅ Рассылка отправлена {sent} пользователям.")
 
 
 async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -115,13 +171,12 @@ async def handle_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.from_user.id not in ADMIN_IDS:
         return
 
-    text = (
+    await query.message.reply_text(
         f"📊 Статистика:\n"
         f"Пользователей: {len(users)}\n"
-        f"Нажатий /start: {start_counter}"
+        f"Нажатий /start: {start_counter}\n"
+        f"Время рассылки: {current_send_time.strftime('%H:%M')}"
     )
-
-    await query.message.reply_text(text)
 
 
 async def handle_broadcast_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -136,42 +191,15 @@ async def handle_broadcast_button(update: Update, context: ContextTypes.DEFAULT_
     await query.message.reply_text("Напиши текст рассылки одним сообщением.")
 
 
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global waiting_broadcast_text
-
-    if update.effective_user.id not in ADMIN_IDS:
-        return
-
-    if not waiting_broadcast_text:
-        return
-
-    text = update.message.text
-    sent = 0
-
-    for user_id in users:
-        try:
-            await context.bot.send_message(chat_id=user_id, text=text)
-            sent += 1
-        except:
-            pass
-
-    waiting_broadcast_text = False
-    await update.message.reply_text(f"✅ Рассылка отправлена {sent} пользователям.")
-
-
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
 app.add_handler(CallbackQueryHandler(admin_panel, pattern="admin_panel"))
 app.add_handler(CallbackQueryHandler(handle_broadcast_button, pattern="broadcast"))
 app.add_handler(CallbackQueryHandler(handle_stats, pattern="stats"))
+app.add_handler(CallbackQueryHandler(handle_set_time, pattern="set_time"))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-# ⏰ запуск по будням в 10:00
-app.job_queue.run_daily(
-    morning_digest,
-    time=datetime.strptime("10:00", "%H:%M").time(),
-    days=(0, 1, 2, 3, 4)
-)
+schedule_job(app)
 
 app.run_polling()
