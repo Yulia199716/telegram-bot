@@ -27,15 +27,13 @@ BIRTHDAY_CAL_URL = "https://calendar.google.com/calendar/ical/93effe2024ad7a4c10
 
 TZ = pytz.timezone("Europe/Moscow")
 
-# users = {id: "username"}
-users = {}
+users = {}  # user_id -> name
 
 waiting_broadcast = False
 waiting_time = False
 
-# для заявок ПРОБА
-probe_requests = {}      # user_id -> данные
-waiting_probe_step = {} # user_id -> шаг
+probe_requests = {}
+waiting_probe_step = {}
 
 current_send_time = time(10, 0, tzinfo=TZ)
 job = None
@@ -44,8 +42,7 @@ job = None
 def get_user_name(user):
     if user.username:
         return f"@{user.username}"
-    else:
-        return f"{user.first_name or ''} {user.last_name or ''}".strip()
+    return f"{user.first_name or ''} {user.last_name or ''}".strip()
 
 
 def get_today_events(url):
@@ -185,7 +182,6 @@ async def handle_broadcast_button(update: Update, context: ContextTypes.DEFAULT_
     global waiting_broadcast
     query = update.callback_query
     await query.answer()
-
     waiting_broadcast = True
     await query.message.reply_text("Напиши текст рассылки одним сообщением.")
 
@@ -206,7 +202,6 @@ async def handle_set_time(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global waiting_time
     query = update.callback_query
     await query.answer()
-
     waiting_time = True
     await query.message.reply_text("Введи время в формате HH:MM (например 09:30)")
 
@@ -217,7 +212,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
 
-    # ---- логика заявки ПРОБА ----
+    # ----- ЗАЯВКА ПРОБА -----
     if user_id in waiting_probe_step:
         step = waiting_probe_step[user_id]
 
@@ -265,7 +260,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             del probe_requests[user_id]
             return
 
-    # ---- админка ----
+    # ----- АДМИНКА -----
     if user_id not in ADMIN_IDS:
         return
 
@@ -297,13 +292,13 @@ def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CallbackQueryHandler(start_probe_request, pattern="probe_request"))
-    app.add_handler(CallbackQueryHandler(handle_probe_decision, pattern="probe_accept_"))
-    app.add_handler(CallbackQueryHandler(handle_probe_decision, pattern="probe_reject_"))
-    app.add_handler(CallbackQueryHandler(admin_panel, pattern="admin_panel"))
-    app.add_handler(CallbackQueryHandler(handle_broadcast_button, pattern="broadcast"))
-    app.add_handler(CallbackQueryHandler(handle_stats, pattern="stats"))
-    app.add_handler(CallbackQueryHandler(handle_set_time, pattern="set_time"))
+    app.add_handler(CallbackQueryHandler(start_probe_request, pattern="^probe_request$"))
+    app.add_handler(CallbackQueryHandler(handle_probe_decision, pattern="^probe_accept_"))
+    app.add_handler(CallbackQueryHandler(handle_probe_decision, pattern="^probe_reject_"))
+    app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
+    app.add_handler(CallbackQueryHandler(handle_broadcast_button, pattern="^broadcast$"))
+    app.add_handler(CallbackQueryHandler(handle_stats, pattern="^stats$"))
+    app.add_handler(CallbackQueryHandler(handle_set_time, pattern="^set_time$"))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     schedule_job(app)
