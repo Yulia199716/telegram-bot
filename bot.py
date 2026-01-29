@@ -26,7 +26,6 @@ TZ = pytz.timezone("Europe/Moscow")
 
 users = {}
 current_send_time = time(10, 0, tzinfo=TZ)
-
 pending_requests = {}
 
 REQUEST_FORMS = {
@@ -68,6 +67,13 @@ REQUEST_FORMS = {
     ],
 }
 
+REQUEST_TITLES = {
+    "vks": "🎥 Заявка на ВКС",
+    "pass": "🚗 Заявка на ПРОПУСК",
+    "carry": "📦 Заявка на ВНОС/ВЫНОС",
+    "buy": "🛒 Заявка на ПОКУПКУ",
+}
+
 
 def get_today_events(url):
     try:
@@ -75,15 +81,13 @@ def get_today_events(url):
         cal = Calendar(r.text)
         today = datetime.now(TZ).date()
         result = []
-
         for event in cal.events:
-            event_dt = event.begin.astimezone(TZ)
-            if event_dt.date() == today:
+            dt = event.begin.astimezone(TZ)
+            if dt.date() == today:
                 if event.begin.time() == time(0, 0):
                     result.append(event.name)
                 else:
-                    result.append(f"{event_dt.strftime('%H:%M')} — {event.name}")
-
+                    result.append(f"{dt.strftime('%H:%M')} — {event.name}")
         return result
     except:
         return []
@@ -109,10 +113,8 @@ async def morning_digest(context):
 
 
 def schedule_job(app):
-    app.job_queue.run_daily(morning_digest, time=current_send_time, days=(0, 1, 2, 3, 4))
+    app.job_queue.run_daily(morning_digest, time=current_send_time, days=(0,1,2,3,4))
 
-
-# ---------- ГЛАВНОЕ МЕНЮ ----------
 
 def main_menu_keyboard(user_id):
     keyboard = [
@@ -122,24 +124,16 @@ def main_menu_keyboard(user_id):
         [InlineKeyboardButton("📎 План работы", url="https://clck.ru/3RWwS3")],
         [InlineKeyboardButton("📞 Телефонный справочник", url="https://sks-bot.ru/employee")],
     ]
-
     if user_id in ADMIN_IDS:
         keyboard.append([InlineKeyboardButton("⚙ Админ-панель", callback_data="admin_panel")])
-
     return InlineKeyboardMarkup(keyboard)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     users[user.id] = user.full_name
+    await update.message.reply_text("Выберите действие:", reply_markup=main_menu_keyboard(user.id))
 
-    await update.message.reply_text(
-        "Выберите действие:",
-        reply_markup=main_menu_keyboard(user.id),
-    )
-
-
-# ---------- МЕНЮ ЗАЯВОК ----------
 
 async def requests_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -153,10 +147,7 @@ async def requests_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("⬅ Назад", callback_data="back_main")],
     ]
 
-    await query.message.edit_message_text(
-        "Тип заявки:",
-        reply_markup=InlineKeyboardMarkup(keyboard),
-    )
+    await query.message.edit_message_text("Тип заявки:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
 async def start_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -174,8 +165,6 @@ async def start_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.edit_message_text(text)
 
 
-# ---------- ПРИЁМ ЗАЯВОК ----------
-
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text.strip()
@@ -183,7 +172,9 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user_id not in pending_requests:
         return
 
-    msg = "📨 Новая заявка:\n\n" + text
+    rtype = pending_requests[user_id]
+    title = REQUEST_TITLES.get(rtype, "📨 Заявка")
+    msg = f"{title}\n\n{text}"
 
     keyboard = InlineKeyboardMarkup([
         [
@@ -192,13 +183,12 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
     ])
 
-    await context.bot.send_message(chat_id=REQUEST_CHAT_ID, text=msg, reply_markup=keyboard)
-    await update.message.reply_text("✅ Заявка отправлена. Мы сообщим, когда всё будет готово.")
+    sent = await context.bot.send_message(chat_id=REQUEST_CHAT_ID, text=msg, reply_markup=keyboard)
+    await context.bot.pin_chat_message(chat_id=REQUEST_CHAT_ID, message_id=sent.message_id, disable_notification=True)
 
+    await update.message.reply_text("✅ Заявка отправлена. Мы сообщим, когда всё будет готово.")
     del pending_requests[user_id]
 
-
-# ---------- РЕШЕНИЕ В ЧАТЕ ----------
 
 async def decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -207,37 +197,32 @@ async def decision(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if query.message.chat.id != REQUEST_CHAT_ID:
         return
 
+    uid = int(query.data.split("_")[1])
+
     if query.data.startswith("ok_"):
-        uid = int(query.data.replace("ok_", ""))
         await context.bot.send_message(chat_id=uid, text="✅ Ваша заявка готова.")
         await query.message.reply_text("Отмечено как выполнено.")
-
-    elif query.data.startswith("no_"):
-        uid = int(query.data.replace("no_", ""))
+    else:
         await context.bot.send_message(chat_id=uid, text="❌ Ваша заявка отклонена.")
         await query.message.reply_text("Заявка отклонена.")
+
+    await query.message.edit_reply_markup(reply_markup=None)
+    try:
+        await context.bot.unpin_chat_message(chat_id=REQUEST_CHAT_ID, message_id=query.message.message_id)
+    except:
+        pass
 
 
 async def back_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    await query.message.edit_message_text("Выберите действие:", reply_markup=main_menu_keyboard(query.from_user.id))
 
-    await query.message.edit_message_text(
-        "Выберите действие:",
-        reply_markup=main_menu_keyboard(query.from_user.id),
-    )
-
-
-# ---------- АДМИН ПАНЕЛЬ ----------
 
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-
-    keyboard = [
-        [InlineKeyboardButton("⬅ Назад", callback_data="back_main")]
-    ]
-
+    keyboard = [[InlineKeyboardButton("⬅ Назад", callback_data="back_main")]]
     await query.message.edit_message_text("Админ-панель", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -246,7 +231,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(requests_menu, pattern="^requests_menu$"))
-    app.add_handler(CallbackQueryHandler(start_request, pattern="^req_"))
+    app.add_handler(CallbackQueryHandler(start_request, pattern="^req_(vks|pass|carry|buy)$"))
     app.add_handler(CallbackQueryHandler(decision, pattern="^(ok_|no_)"))
     app.add_handler(CallbackQueryHandler(back_main, pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
