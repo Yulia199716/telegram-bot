@@ -5,7 +5,7 @@ from telegram.ext import (
     CallbackQueryHandler, MessageHandler, filters
 )
 
-TOKEN = os.getenv("8219826850:AAEnU6GZBD8NNaaN_uO7znBsOVuRa3RKAJU")
+TOKEN = os.getenv("8219826850:AAFmknN5pYYb092T1KicaIIeaEaqLNdi9kQ")
 
 ADMIN_ID = 444694124  # твой ID администратора
 
