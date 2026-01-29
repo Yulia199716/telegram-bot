@@ -28,6 +28,9 @@ users = {}
 current_send_time = time(10, 0, tzinfo=TZ)
 pending_requests = {}
 
+waiting_broadcast = False
+waiting_time_change = False
+
 REQUEST_FORMS = {
     "vks": [
         "Дата мероприятия",
@@ -111,7 +114,7 @@ async def morning_digest(context):
 
 
 def schedule_job(app):
-    app.job_queue.run_daily(morning_digest, time=current_send_time, days=(0, 1, 2, 3, 4))
+    app.job_queue.run_daily(morning_digest, time=current_send_time, days=(0,1,2,3,4))
 
 
 def main_menu_keyboard(user_id):
@@ -164,14 +167,36 @@ async def start_request(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global waiting_broadcast, waiting_time_change, current_send_time
+
     user_id = update.effective_user.id
+    text = update.message.text.strip()
+
+    if waiting_broadcast and user_id in ADMIN_IDS:
+        for uid in users:
+            await context.bot.send_message(chat_id=uid, text=text)
+        waiting_broadcast = False
+        await update.message.reply_text("✅ Рассылка отправлена.")
+        return
+
+    if waiting_time_change and user_id in ADMIN_IDS:
+        try:
+            new_time = datetime.strptime(text, "%H:%M").time()
+            current_send_time = time(new_time.hour, new_time.minute, tzinfo=TZ)
+            schedule_job(context.application)
+            waiting_time_change = False
+            await update.message.reply_text(f"✅ Новое время рассылки: {text}")
+        except:
+            await update.message.reply_text("❌ Введите в формате HH:MM")
+        return
+
     if user_id not in pending_requests:
         return
 
     rtype = pending_requests[user_id]
     title = REQUEST_TITLES[rtype]
 
-    msg = f"{title}\n\n{update.message.text}"
+    msg = f"{title}\n\n{text}"
 
     keyboard = InlineKeyboardMarkup([
         [
@@ -214,10 +239,34 @@ async def back_main(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.message.edit_text(
-        "Админ-панель",
-        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("⬅ Назад", callback_data="back_main")]])
-    )
+
+    keyboard = [
+        [InlineKeyboardButton("📢 Рассылка", callback_data="admin_broadcast")],
+        [InlineKeyboardButton("⏰ Изменить время рассылки", callback_data="admin_time")],
+        [InlineKeyboardButton("📊 Пользователи", callback_data="admin_users")],
+        [InlineKeyboardButton("⬅ Назад", callback_data="back_main")],
+    ]
+
+    await query.message.edit_text("Админ-панель:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+
+async def admin_actions(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global waiting_broadcast, waiting_time_change
+
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "admin_broadcast":
+        waiting_broadcast = True
+        await query.message.edit_text("Введите текст рассылки:")
+    elif query.data == "admin_time":
+        waiting_time_change = True
+        await query.message.edit_text("Введите новое время в формате HH:MM")
+    elif query.data == "admin_users":
+        text = "👥 Пользователи:\n"
+        for name in users.values():
+            text += f"- {name}\n"
+        await query.message.edit_text(text)
 
 
 def main():
@@ -229,6 +278,7 @@ def main():
     app.add_handler(CallbackQueryHandler(decision, pattern="^(ok_|no_)"))
     app.add_handler(CallbackQueryHandler(back_main, pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
+    app.add_handler(CallbackQueryHandler(admin_actions, pattern="^admin_"))
 
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
