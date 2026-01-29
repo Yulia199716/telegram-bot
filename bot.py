@@ -257,7 +257,6 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     keyboard = [[InlineKeyboardButton("⬅ Назад", callback_data="back_main")]]
-
     await query.message.edit_message_text("Админ-панель", reply_markup=InlineKeyboardMarkup(keyboard))
 
 
@@ -266,7 +265,7 @@ def main():
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(requests_menu, pattern="^requests_menu$"))
-    app.add_handler(CallbackQueryHandler(start_request, pattern="^req_"))
+    app.add_handler(CallbackQueryHandler(start_request, pattern="^req_(vks|pass|carry|buy)$"))
     app.add_handler(CallbackQueryHandler(decision, pattern="^(ok_|no_)"))
     app.add_handler(CallbackQueryHandler(back_main, pattern="^back_main$"))
     app.add_handler(CallbackQueryHandler(admin_panel, pattern="^admin_panel$"))
