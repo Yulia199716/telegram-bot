@@ -127,6 +127,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("➕ Добавить мероприятие", url="https://clck.ru/3MrvFT")],
         [InlineKeyboardButton("📨 Заявки", callback_data="requests_menu")],
         [InlineKeyboardButton("📎 План работы", url="https://clck.ru/3RWwS3")],
+        [InlineKeyboardButton("📞 Телефонный справочник", url="https://sks-bot.ru/employee")],
     ]
 
     if user.id in ADMIN_IDS:
