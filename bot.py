@@ -25,7 +25,7 @@ BIRTHDAY_CAL_URL = "https://calendar.google.com/calendar/ical/93effe2024ad7a4c10
 TZ = pytz.timezone("Europe/Moscow")
 
 users = {}
-current_send_time = time(10, 0)
+current_send_time = time(10, 0, tzinfo=TZ)
 pending_requests = {}
 
 waiting_broadcast = False
@@ -98,11 +98,8 @@ def get_today_events(url):
 
 
 async def morning_digest(context):
-    print("Users:", users) 
-
     events = get_today_events(EVENT_CAL_URL)
     birthdays = get_today_events(BIRTHDAY_CAL_URL)
-
 
     text = (
         "☀ Доброе утро!\n"
@@ -117,13 +114,7 @@ async def morning_digest(context):
 
 
 def schedule_job(app):
-    app.job_queue.run_daily(
-        morning_digest,
-        time=current_send_time,
-        days=(0, 1, 2, 3, 4),  # пн–пт
-        timezone=TZ
-    )
-
+    app.job_queue.run_daily(morning_digest, time=current_send_time, days=(0,1,2,3,4))
 
 
 def main_menu_keyboard(user_id):
@@ -191,7 +182,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if waiting_time_change and user_id in ADMIN_IDS:
         try:
             new_time = datetime.strptime(text, "%H:%M").time()
-            current_send_time = time(new_time.hour, new_time.minute)
+            current_send_time = time(new_time.hour, new_time.minute, tzinfo=TZ)
             schedule_job(context.application)
             waiting_time_change = False
             await update.message.reply_text(f"✅ Новое время рассылки: {text}")
