@@ -25,7 +25,7 @@ BIRTHDAY_CAL_URL = "https://calendar.google.com/calendar/ical/93effe2024ad7a4c10
 TZ = pytz.timezone("Europe/Moscow")
 
 users = {}
-current_send_time = time(10, 0
+current_send_time = time(10, 0)
 pending_requests = {}
 
 waiting_broadcast = False
@@ -191,7 +191,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if waiting_time_change and user_id in ADMIN_IDS:
         try:
             new_time = datetime.strptime(text, "%H:%M").time()
-            current_send_time = time(new_time.hour, new_time.minute, tzinfo=TZ)
+           current_send_time = time(new_time.hour, new_time.minute)
             schedule_job(context.application)
             waiting_time_change = False
             await update.message.reply_text(f"✅ Новое время рассылки: {text}")
